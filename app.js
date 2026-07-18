@@ -67,7 +67,8 @@ const LS_SET = 'tl_settings_v1';   // { newPerDay }
 const LS_NEW = 'tl_newlog_v1';     // { date: 'YYYY-MM-DD', introduced: n }
 const DAY = 86400000;
 
-const settings = Object.assign({ newPerDay: 20, _last: 0 }, readJSON(LS_SET, {}));
+const DEFAULT_NEW_PER_DAY = 20;
+const settings = Object.assign({ newPerDay: DEFAULT_NEW_PER_DAY, _last: 0 }, readJSON(LS_SET, {}));
 function saveSettings() { settings._last = Date.now(); writeJSON(LS_SET, settings); pushSettingsMeta(); }
 
 const store = {
@@ -99,10 +100,17 @@ function mergeRemote(rows) {
     const rs = remoteById[id];
     if (!rs || (ls.last || 0) > (rs.last || 0)) window.Sync.push(id, ls);
   }
-  // push up local meta if newer than remote (or remote missing)
-  if (!remoteSet || (settings._last || 0) > (remoteSet.last || 0)) pushSettingsMeta();
+  // Push up local settings only if this device has a meaningful value (explicitly
+  // set, or a non-default limit) AND it's newer than / missing from remote. This
+  // stops a device still on the default (20) from clobbering another's chosen limit.
+  const settingsMeaningful = settings._last || settings.newPerDay !== DEFAULT_NEW_PER_DAY;
+  if (settingsMeaningful && (!remoteSet || (settings._last || 0) > (remoteSet.last || 0))) pushSettingsMeta();
+  // Newlog uses max-merge (monotonic per day). Push back when our count is higher
+  // than remote (even if remote's timestamp is newer) or when we're strictly newer.
   const l = newLog();
-  if (!remoteNew || (l.last || 0) > (remoteNew.last || 0)) pushNewlogMeta();
+  const remoteSameDay = remoteNew && remoteNew.date === l.date;
+  if (!remoteNew || (remoteSameDay && (l.introduced || 0) > (remoteNew.introduced || 0)) ||
+      l.date > (remoteNew.date || '') || (l.last || 0) > (remoteNew.last || 0)) pushNewlogMeta();
 }
 
 function applySettingsMeta(s) {
