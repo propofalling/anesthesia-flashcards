@@ -175,8 +175,18 @@ function render() {
   if (VIEW.name === 'home') return renderHome();
   if (VIEW.name === 'study') return renderStudy();
   if (VIEW.name === 'search') return renderSearch();
+  if (VIEW.name === 'deckbrowse') return renderDeckBrowse();
   if (VIEW.name === 'browse') return renderBrowseCard();
   if (VIEW.name === 'settings') return renderSettings();
+}
+
+/* ---------- theme ---------- */
+function currentTheme() { return document.documentElement.getAttribute('data-theme') || 'light'; }
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  try { localStorage.setItem('tl_theme', t); } catch (e) { }
+  const btn = document.getElementById('themebtn'); if (btn) btn.textContent = t === 'dark' ? '☾' : '☀';
+  const meta = document.querySelector('meta[name=theme-color]'); if (meta) meta.setAttribute('content', t === 'dark' ? '#0f1620' : '#ffffff');
 }
 
 function setBar(title, back) {
@@ -193,32 +203,60 @@ function renderHome() {
     <div class="searchbar">
       <input id="q" type="search" placeholder="Search ${DATA.count} cards…" autocomplete="off">
     </div>
-    <button class="study-all" id="studyall">
-      <div>
-        <div class="big">Study All</div>
-        <div class="sub">${DATA.count} cards · ${DATA.subdecks.length} topics</div>
+    <div class="study-all">
+      <div style="display:flex;align-items:center;gap:14px;width:100%">
+        <div>
+          <div class="big">Whole deck</div>
+          <div class="sub">${DATA.count} cards · ${DATA.subdecks.length} topics</div>
+        </div>
+        <div class="duepill"><span class="pill">${totalDue} due${remNew ? ' · +' + remNew + ' new' : ''}</span></div>
       </div>
-      <div class="duepill">
-        <div class="pill ${totalDue || remNew ? 'due' : 'zero'}">${totalDue} due${remNew ? ' · +' + remNew + ' new' : ''}</div>
+      <div class="row2">
+        <button id="viewall">View all</button>
+        <button id="studyall">Study</button>
       </div>
-    </button>
+    </div>
     <div class="section-label">Subdecks</div>
-    <div class="grid">`;
+    <div class="decklist">`;
   for (const s of DATA.subdecks) {
     const d = dueCount(s.key);
-    h += `<button class="deckcard" style="--dc:${s.color}" data-key="${s.key}">
-        ${d ? `<span class="duebadge">${d}</span>` : ''}
-        <span class="label">${esc(s.label)}</span>
-        <span class="meta">${s.count} cards</span>
-      </button>`;
+    h += `<div class="deckcard" style="--dc:${s.color}">
+        <div class="dc-head">
+          <span class="label">${esc(s.label)}</span>
+          <span class="meta">${s.count} cards${d ? ` · <span class="due">${d} due</span>` : ''}</span>
+        </div>
+        <div class="dc-actions">
+          <button class="dc-btn view" data-key="${s.key}">View all</button>
+          <button class="dc-btn study" data-key="${s.key}">Study${d ? ` <span class="cnt">${d}</span>` : ''}</button>
+        </div>
+      </div>`;
   }
-  h += `</div><div class="foot">Progress saved on this device · ${DATA.count} cards · updated ${new Date(DATA.generated).toLocaleDateString()}</div>`;
+  h += `</div><div class="foot">Updated ${new Date(DATA.generated).toLocaleDateString()} · ${DATA.count} cards</div>`;
   app.innerHTML = h;
 
   $('#studyall').onclick = () => startStudy('ALL');
-  $$('.deckcard').forEach(b => b.onclick = () => startStudy(b.dataset.key));
+  $('#viewall').onclick = () => go({ name: 'deckbrowse', key: 'ALL' });
+  $$('.dc-btn.study').forEach(b => b.onclick = () => startStudy(b.dataset.key));
+  $$('.dc-btn.view').forEach(b => b.onclick = () => go({ name: 'deckbrowse', key: b.dataset.key }));
   const q = $('#q');
   q.oninput = () => { if (q.value.trim()) go({ name: 'search', q: q.value }); };
+}
+
+/* ---------- DECK BROWSE (view all cards in a deck) ---------- */
+function renderDeckBrowse() {
+  const key = VIEW.key;
+  const label = key === 'ALL' ? 'All cards' : subLabel(key);
+  setBar(label, () => go({ name: 'home' }));
+  const cards = deckCards(key);
+  let h = `<div class="section-label">${cards.length} card${cards.length === 1 ? '' : 's'}</div>`;
+  for (const c of cards) {
+    h += `<button class="result" style="--dc:${subColor(c.domain)}" data-id="${c.id}">
+        <div class="rt">${renderText(c.title)}</div>
+        <div class="rd">${esc(subLabel(c.domain))}</div>
+      </button>`;
+  }
+  app.innerHTML = h;
+  $$('.result').forEach(b => b.onclick = () => go({ name: 'browse', id: b.dataset.id, from: { name: 'deckbrowse', key } }));
 }
 
 /* ---------- STUDY ---------- */
@@ -418,11 +456,33 @@ function renderSettings() {
       <div class="lab"><div class="t">Reset ALL study progress</div><div class="d">Clears every card's spaced-repetition schedule on this device. Cannot be undone.</div></div>
       <button class="danger" id="resetall">Erase</button>
     </div>
+    ${syncSettingsHTML()}
     <div class="foot">TrueLearn ITE 2027 · ${DATA.count} cards · data generated ${new Date(DATA.generated).toLocaleString()}</div>`;
   const npd = $('#npd');
   npd.onchange = () => { settings.newPerDay = Math.max(0, parseInt(npd.value || '0', 10)); saveSettings(); toast('Saved'); };
   $('#resetnew').onclick = () => { writeJSON(LS_NEW, { date: todayStr(), introduced: 0 }); toast('New-card count reset'); };
   $('#resetall').onclick = () => { if (confirm('Erase all study progress on this device?')) { localStorage.removeItem(LS_PROG); toast('Progress erased'); } };
+  const sn = $('#syncnow'); if (sn) sn.onclick = syncNow;
+}
+
+function syncSettingsHTML() {
+  const cfg = window.TL_SYNC || {};
+  if (!(window.Sync && window.Sync.enabled)) {
+    return `<div class="section-label">Sync</div><div class="syncbox"><div class="k">Cross-device sync is off. Add Supabase keys in config.js to enable it.</div></div>`;
+  }
+  const st = window.Sync.getStatus();
+  const state = st.ready ? '<span class="synced-ok">connected</span>' : '<span class="synced-bad">not connected yet</span>';
+  return `<div class="section-label">Sync</div>
+    <div class="syncbox">
+      <div>Status: ${state}</div>
+      <div class="k" style="margin-top:4px">Profile: <code>${esc(cfg.profile || '')}</code></div>
+      <div class="k" style="margin-top:4px">Last pull: ${st.lastPull == null ? '—' : st.lastPull + ' rows'} · Pending writes: ${st.queue}</div>
+      ${st.lastError ? `<div class="synced-bad" style="margin-top:6px">Last error: <code>${esc(String(st.lastError))}</code></div>` : ''}
+    </div>
+    <div class="setting">
+      <div class="lab"><div class="t">Sync now</div><div class="d">Pull the latest progress and push anything pending.</div></div>
+      <button class="act" id="syncnow">Sync now</button>
+    </div>`;
 }
 
 /* ---------- helpers ---------- */
@@ -452,8 +512,25 @@ async function boot() {
       }
     } catch (e) { console.warn('[sync] skipped:', e); }
   }
+  applyTheme(currentTheme());
+  $('#themebtn').onclick = () => applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
   $('#settingsbtn').onclick = () => go({ name: 'settings' });
   go({ name: 'home' });
   if ('serviceWorker' in navigator) { try { await navigator.serviceWorker.register('sw.js'); } catch { } }
+}
+
+// Manual sync trigger (Settings → Sync now).
+async function syncNow() {
+  if (!(window.Sync && window.Sync.enabled)) { toast('Sync not configured'); return; }
+  toast('Syncing…');
+  try {
+    if (!window.Sync.ready()) await window.Sync.init();
+    const remote = await window.Sync.pull();
+    if (remote) mergeRemote(remote);
+    await window.Sync.flush();
+    const st = window.Sync.getStatus();
+    toast(st.lastError ? 'Sync error — see status' : 'Synced ✓');
+  } catch (e) { toast('Sync failed'); }
+  renderSettings();
 }
 boot();

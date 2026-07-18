@@ -13,10 +13,12 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <script>try{var t=localStorage.getItem('tl_theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
   <header class="appbar">
     <div class="appbar-in">
       <button id="backbtn" class="iconbtn backbtn hidden">‹ Back</button>
       <h1 id="bartitle">ITE Flashcards</h1>
+      <button id="themebtn" class="iconbtn" aria-label="Toggle light/dark">☀</button>
       <button id="settingsbtn" class="iconbtn" aria-label="Settings">⚙</button>
     </div>
   </header>
