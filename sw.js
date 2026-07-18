@@ -1,6 +1,6 @@
 /* Service worker — offline cache for the app shell + card data + assets.
    Bump CACHE when you ship changes so clients refresh. */
-const CACHE = 'tl-ite-v3';
+const CACHE = 'tl-ite-v4';
 const SHELL = [
   './', 'index.html', 'style.css', 'app.js', 'config.js', 'sync.js', 'manifest.json',
   'data/cards.json', 'icons/icon-192.png', 'icons/icon-512.png'

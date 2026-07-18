@@ -67,8 +67,8 @@ const LS_SET = 'tl_settings_v1';   // { newPerDay }
 const LS_NEW = 'tl_newlog_v1';     // { date: 'YYYY-MM-DD', introduced: n }
 const DAY = 86400000;
 
-const settings = Object.assign({ newPerDay: 20 }, readJSON(LS_SET, {}));
-function saveSettings() { writeJSON(LS_SET, settings); }
+const settings = Object.assign({ newPerDay: 20, _last: 0 }, readJSON(LS_SET, {}));
+function saveSettings() { settings._last = Date.now(); writeJSON(LS_SET, settings); pushSettingsMeta(); }
 
 const store = {
   all() { return readJSON(LS_PROG, {}); },
@@ -76,34 +76,62 @@ const store = {
   set(id, st) { const a = this.all(); a[id] = st; writeJSON(LS_PROG, a); if (window.Sync) window.Sync.push(id, st); },
 };
 
-// Merge remote progress rows into local storage (last-write-wins by state.last),
-// then push up any local rows that are newer than (or missing from) remote.
+const META_SET = '__meta_settings__', META_NEW = '__meta_newlog__';
+
+// Merge remote rows into local storage (last-write-wins by `last` timestamp),
+// then push up any local rows newer than (or missing from) remote. Card rows go
+// to the SRS store; the two reserved meta rows carry settings + daily new-count.
 function mergeRemote(rows) {
   const local = store.all();
   const remoteById = {};
   let changed = false;
+  let remoteSet = null, remoteNew = null;
   for (const r of rows) {
+    if (r.card_id === META_SET) { remoteSet = r.state; applySettingsMeta(r.state); continue; }
+    if (r.card_id === META_NEW) { remoteNew = r.state; applyNewlogMeta(r.state); continue; }
     remoteById[r.card_id] = r.state;
     const ls = local[r.card_id], rs = r.state;
     if (!ls || ((rs && rs.last || 0) > (ls.last || 0))) { local[r.card_id] = rs; changed = true; }
   }
   if (changed) writeJSON(LS_PROG, local);
+  // push up local card states newer than remote
   for (const [id, ls] of Object.entries(local)) {
     const rs = remoteById[id];
     if (!rs || (ls.last || 0) > (rs.last || 0)) window.Sync.push(id, ls);
   }
+  // push up local meta if newer than remote (or remote missing)
+  if (!remoteSet || (settings._last || 0) > (remoteSet.last || 0)) pushSettingsMeta();
+  const l = newLog();
+  if (!remoteNew || (l.last || 0) > (remoteNew.last || 0)) pushNewlogMeta();
 }
+
+function applySettingsMeta(s) {
+  if (s && (s.last || 0) > (settings._last || 0)) {
+    settings.newPerDay = s.newPerDay; settings._last = s.last;
+    writeJSON(LS_SET, settings);
+  }
+}
+function applyNewlogMeta(s) {
+  if (!s || !s.date) return;
+  const l = newLog();
+  if (s.date > l.date) { writeJSON(LS_NEW, { date: s.date, introduced: s.introduced || 0, last: s.last || Date.now() }); }
+  else if (s.date === l.date && ((s.introduced || 0) > (l.introduced || 0) || (s.last || 0) > (l.last || 0))) {
+    writeJSON(LS_NEW, { date: l.date, introduced: Math.max(l.introduced || 0, s.introduced || 0), last: Math.max(l.last || 0, s.last || 0) });
+  }
+}
+function pushSettingsMeta() { if (window.Sync) window.Sync.push(META_SET, { newPerDay: settings.newPerDay, last: settings._last || Date.now() }); }
+function pushNewlogMeta() { if (window.Sync) { const l = newLog(); window.Sync.push(META_NEW, { date: l.date, introduced: l.introduced || 0, last: l.last || Date.now() }); } }
 function readJSON(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch { return d; } }
 function writeJSON(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 function newLog() {
   let l = readJSON(LS_NEW, null);
-  if (!l || l.date !== todayStr()) { l = { date: todayStr(), introduced: 0 }; writeJSON(LS_NEW, l); }
+  if (!l || l.date !== todayStr()) { l = { date: todayStr(), introduced: 0, last: Date.now() }; writeJSON(LS_NEW, l); }
   return l;
 }
 function newRemaining() { return Math.max(0, settings.newPerDay - newLog().introduced); }
-function bumpNew(n) { const l = newLog(); l.introduced += n; writeJSON(LS_NEW, l); }
+function bumpNew(n) { const l = newLog(); l.introduced += n; l.last = Date.now(); writeJSON(LS_NEW, l); pushNewlogMeta(); }
 
 /* ---- SM-2 scheduling ---- */
 // grade: 0 Again, 1 Hard, 2 Good, 3 Easy
@@ -199,6 +227,7 @@ function setBar(title, back) {
 function renderHome() {
   setBar('ITE Flashcards', null);
   const totalDue = dueCount('ALL'), remNew = Math.min(newRemaining(), newCount('ALL'));
+  const seenCount = Object.values(store.all()).filter(s => s && s.seen).length;
   let h = `
     <div class="searchbar">
       <input id="q" type="search" placeholder="Search ${DATA.count} cards…" autocomplete="off">
@@ -207,7 +236,7 @@ function renderHome() {
       <div style="display:flex;align-items:center;gap:14px;width:100%">
         <div>
           <div class="big">Whole deck</div>
-          <div class="sub">${DATA.count} cards · ${DATA.subdecks.length} topics</div>
+          <div class="sub">${DATA.count} cards · ${seenCount} studied</div>
         </div>
         <div class="duepill"><span class="pill">${totalDue} due${remNew ? ' · +' + remNew + ' new' : ''}</span></div>
       </div>
