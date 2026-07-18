@@ -57,6 +57,10 @@ function renderText(t) {
     if (c === 'key') return `<span class="hl-key">${w}</span>`;
     return w;
   });
+  // Re-enable ONLY subscript/superscript markup (the source text uses <sub>/<sup>,
+  // which esc() turned into &lt;sub&gt; etc.). Restoring just these two tags keeps
+  // the render XSS-safe while showing formulas/units correctly (e.g. PaO2, cm^-5).
+  t = t.replace(/&lt;(\/?)(sub|sup)&gt;/g, '<$1$2>');
   return t;
 }
 function stripOl(t) { t = (t || '').trim(); if (t.startsWith('*') && t.endsWith('*')) t = t.slice(1, -1); return t.trim(); }
