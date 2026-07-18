@@ -73,8 +73,26 @@ function saveSettings() { writeJSON(LS_SET, settings); }
 const store = {
   all() { return readJSON(LS_PROG, {}); },
   get(id) { return this.all()[id] || null; },
-  set(id, st) { const a = this.all(); a[id] = st; writeJSON(LS_PROG, a); },
+  set(id, st) { const a = this.all(); a[id] = st; writeJSON(LS_PROG, a); if (window.Sync) window.Sync.push(id, st); },
 };
+
+// Merge remote progress rows into local storage (last-write-wins by state.last),
+// then push up any local rows that are newer than (or missing from) remote.
+function mergeRemote(rows) {
+  const local = store.all();
+  const remoteById = {};
+  let changed = false;
+  for (const r of rows) {
+    remoteById[r.card_id] = r.state;
+    const ls = local[r.card_id], rs = r.state;
+    if (!ls || ((rs && rs.last || 0) > (ls.last || 0))) { local[r.card_id] = rs; changed = true; }
+  }
+  if (changed) writeJSON(LS_PROG, local);
+  for (const [id, ls] of Object.entries(local)) {
+    const rs = remoteById[id];
+    if (!rs || (ls.last || 0) > (rs.last || 0)) window.Sync.push(id, ls);
+  }
+}
 function readJSON(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch { return d; } }
 function writeJSON(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
 
@@ -424,6 +442,16 @@ document.addEventListener('keydown', e => {
 /* ============================ boot ============================ */
 async function boot() {
   try { await loadData(); } catch (e) { app.innerHTML = `<div class="empty">Couldn't load cards. If offline, open the app once online first.</div>`; return; }
+  // Cross-device sync: pull remote progress and merge before first render.
+  if (window.Sync && window.Sync.enabled) {
+    try {
+      if (await window.Sync.init()) {
+        const remote = await window.Sync.pull();
+        if (remote) mergeRemote(remote);
+        window.Sync.flush();
+      }
+    } catch (e) { console.warn('[sync] skipped:', e); }
+  }
   $('#settingsbtn').onclick = () => go({ name: 'settings' });
   go({ name: 'home' });
   if ('serviceWorker' in navigator) { try { await navigator.serviceWorker.register('sw.js'); } catch { } }
