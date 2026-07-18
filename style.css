@@ -67,6 +67,12 @@ header.appbar{
 .study-all .row2 button{flex:1;background:rgba(255,255,255,.16);color:#fff;border-radius:11px;padding:11px;font-weight:700;font-size:14px}
 .study-all .row2 button:active{background:rgba(255,255,255,.28)}
 
+.recent-btn{width:100%;display:flex;align-items:center;justify-content:space-between;margin-top:10px;
+  background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:12px;
+  padding:14px 16px;font-size:15px;font-weight:650;color:var(--text)}
+.recent-btn:active{background:var(--panel2)}
+.recent-btn .ra-cta{font-size:13px;font-weight:600;color:var(--accent)}
+
 /* subdeck list */
 .decklist{display:flex;flex-direction:column;gap:10px;margin-top:6px}
 .deckcard{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--dc,#3b82f6);

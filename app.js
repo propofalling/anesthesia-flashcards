@@ -216,6 +216,7 @@ function render() {
   if (VIEW.name === 'study') return renderStudy();
   if (VIEW.name === 'search') return renderSearch();
   if (VIEW.name === 'deckbrowse') return renderDeckBrowse();
+  if (VIEW.name === 'recent') return renderRecent();
   if (VIEW.name === 'browse') return renderBrowseCard();
   if (VIEW.name === 'settings') return renderSettings();
 }
@@ -257,6 +258,7 @@ function renderHome() {
         <button id="studyall">Study</button>
       </div>
     </div>
+    <button class="recent-btn" id="recentbtn"><span>Recently added</span><span class="ra-cta">25 newest ›</span></button>
     <div class="section-label">Subdecks</div>
     <div class="decklist">`;
   for (const s of DATA.subdecks) {
@@ -277,10 +279,31 @@ function renderHome() {
 
   $('#studyall').onclick = () => startStudy('ALL');
   $('#viewall').onclick = () => go({ name: 'deckbrowse', key: 'ALL' });
+  $('#recentbtn').onclick = () => go({ name: 'recent' });
   $$('.dc-btn.study').forEach(b => b.onclick = () => startStudy(b.dataset.key));
   $$('.dc-btn.view').forEach(b => b.onclick = () => go({ name: 'deckbrowse', key: b.dataset.key }));
   const q = $('#q');
   q.oninput = () => { if (q.value.trim()) go({ name: 'search', q: q.value }); };
+}
+
+/* ---------- RECENTLY ADDED (25 most recent generated/updated cards) ---------- */
+function renderRecent() {
+  setBar('Recently added', () => go({ name: 'home' }));
+  const recent = CARDS.filter(c => c.updated)
+    .sort((a, b) => a.updated < b.updated ? 1 : a.updated > b.updated ? -1 : b.num - a.num)
+    .slice(0, 25);
+  if (!recent.length) { app.innerHTML = `<div class="empty">No recently added cards yet.</div>`; return; }
+  let h = `<div class="section-label">${recent.length} most recent</div>`;
+  for (const c of recent) {
+    const d = new Date(c.updated);
+    const ds = isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    h += `<button class="result" style="--dc:${subColor(c.domain)}" data-id="${c.id}">
+        <div class="rt">${renderText(c.title)}</div>
+        <div class="rd">${esc(subLabel(c.domain))}${ds ? ' · ' + ds : ''}</div>
+      </button>`;
+  }
+  app.innerHTML = h;
+  $$('.result').forEach(b => b.onclick = () => go({ name: 'browse', id: b.dataset.id, from: { name: 'recent' } }));
 }
 
 /* ---------- DECK BROWSE (view all cards in a deck) ---------- */
