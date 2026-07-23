@@ -258,7 +258,7 @@ function renderHome() {
         <button id="studyall">Study</button>
       </div>
     </div>
-    <button class="recent-btn" id="recentbtn"><span>Recently added</span><span class="ra-cta">25 newest ›</span></button>
+    <button class="recent-btn" id="recentbtn"><span>Recently added</span><span class="ra-cta">${CARDS.filter(c => c.updated).length} cards ›</span></button>
     <div class="section-label">Subdecks</div>
     <div class="decklist">`;
   for (const s of DATA.subdecks) {
@@ -286,14 +286,13 @@ function renderHome() {
   q.oninput = () => { if (q.value.trim()) go({ name: 'search', q: q.value }); };
 }
 
-/* ---------- RECENTLY ADDED (25 most recent generated/updated cards) ---------- */
+/* ---------- RECENTLY ADDED (all note-generated/updated cards, newest first) ---------- */
 function renderRecent() {
   setBar('Recently added', () => go({ name: 'home' }));
   const recent = CARDS.filter(c => c.updated)
-    .sort((a, b) => a.updated < b.updated ? 1 : a.updated > b.updated ? -1 : b.num - a.num)
-    .slice(0, 25);
+    .sort((a, b) => a.updated < b.updated ? 1 : a.updated > b.updated ? -1 : b.num - a.num);
   if (!recent.length) { app.innerHTML = `<div class="empty">No recently added cards yet.</div>`; return; }
-  let h = `<div class="section-label">${recent.length} most recent</div>`;
+  let h = `<div class="section-label">${recent.length} cards · newest first</div>`;
   for (const c of recent) {
     const d = new Date(c.updated);
     const ds = isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
